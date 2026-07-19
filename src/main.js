@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as satellite from 'satellite.js';
 
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
@@ -59,11 +60,138 @@ function createStars() {
 }
 createStars();
 
+
+
+
+/* Satellite Data fetching */
+
+const ISS_TLE_URL = 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle';
+const satGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+const satMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+const issMesh = new THREE.Mesh(satGeometry, satMaterial);
+scene.add(issMesh);
+
+let activeSatrec = null;
+let orbitLine = null;
+let futureOrbitLine = null;
+
+function getSatellitePosition(satrec, date){
+  const positionAndVelocity = satellite.propagate(satrec, date);
+  const positionEci = positionAndVelocity.position;
+
+  if (!positionEci || isNaN(positionEci.x)) return null;
+
+  const gmst = satellite.gstime(date);
+  const positionGd = satellite.eciToGeodetic(positionEci, gmst);
+  const longitude = positionGd.longitude;
+  const latitude = positionGd.latitude;
+  const altitude = positionGd.height;
+  const EARTH_RADIUS = 6371;
+  const r = 1 + (altitude / EARTH_RADIUS); 
+  const x = r * Math.cos(latitude) * Math.cos(longitude);
+  const y = r * Math.sin(latitude);
+  const z = -r * Math.cos(latitude) * Math.sin(longitude);
+
+  return new THREE.Vector3(x, y, z);
+}
+
+function drawTrajectory(satrec) {
+  if (orbitLine) scene.remove(orbitLine);
+  if (futureOrbitLine) scene.remove(futureOrbitLine);
+
+  const pastPoints = [];
+  const futurePoints = [];
+  const now = Date.now();
+
+  for (let i = -46; i <= 0; i++) {
+    const pastDate = new Date(now + i * 60000);
+    const pos = getSatellitePosition(satrec, pastDate);
+    if (pos) pastPoints.push(pos);
+  }
+
+  for (let i = 0; i <= 46; i++) {
+    const futureDate = new Date(now + i * 60000);
+    const pos = getSatellitePosition(satrec, futureDate);
+    if (pos) futurePoints.push(pos);
+  }
+
+  const pastMaterial = new THREE.LineBasicMaterial({ 
+    color: 0xffff00, 
+    transparent: false, 
+    opacity: 1.0 
+  });
+  const pastGeometry = new THREE.BufferGeometry().setFromPoints(pastPoints);
+  orbitLine = new THREE.Line(pastGeometry, pastMaterial);
+  scene.add(orbitLine);
+
+  const futureMaterial = new THREE.LineDashedMaterial({ 
+    color: 0x00ffff, 
+    dashSize: 0.02,
+    gapSize: 0.02,
+    transparent: false, 
+    opacity: 1.0 
+  });
+  const futureGeometry = new THREE.BufferGeometry().setFromPoints(futurePoints);
+  
+  futureOrbitLine = new THREE.Line(futureGeometry, futureMaterial);
+  futureOrbitLine.computeLineDistances(); 
+  scene.add(futureOrbitLine);
+}
+
+const FALLBACK_TLE = `ISS (ZARYA)
+1 25544U 98067A   24135.52083333  .00016717  00000-0  30188-3 0  9997
+2 25544  51.6416 284.6300 0005703 124.7170 327.0002 15.49525530417711`;
+
+async function fetchSatelliteData() {
+  const CACHE_KEY = 'iss_tle_cache';
+  const CACHE_TIME_KEY = 'iss_tle_timestamp';
+  const CACHE_DURATION = 1000 * 60 * 60 * 12;
+
+  try {
+    const cachedTLE = localStorage.getItem(CACHE_KEY);
+    const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
+    const now = Date.now();
+
+    let data = '';
+
+    if (cachedTLE && cachedTime && (now - cachedTime < CACHE_DURATION)) {
+      console.log("Using cached TLE data. Bypassing network request.");
+      data = cachedTLE;
+    } else {
+      console.log("Fetching fresh TLE data from CelesTrak...");
+      const response = await fetch(ISS_TLE_URL);
+      data = await response.text();
+
+      if (!response.ok || data.includes('<html')) {
+        throw new Error("API rate limited.");
+      }
+
+      localStorage.setItem(CACHE_KEY, data);
+      localStorage.setItem(CACHE_TIME_KEY, now.toString());
+    }
+
+    const tleLines = data.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    activeSatrec = satellite.twoline2satrec(tleLines[1], tleLines[2]);
+    drawTrajectory(activeSatrec);
+
+  } catch (error) {
+    console.warn("Network and Cache failed. Using Fallback TLE.", error);
+    const tleLines = FALLBACK_TLE.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    activeSatrec = satellite.twoline2satrec(tleLines[1], tleLines[2]);
+    drawTrajectory(activeSatrec);
+  }
+}
+
 function animate() {
   requestAnimationFrame(animate);
-  
-  earth.rotation.y += 0.0005;
-  
+
+  if (activeSatrec){
+    const livePos = getSatellitePosition(activeSatrec, new Date());
+    if (livePos) {
+      issMesh.position.copy(livePos);
+    }
+  }
+
   controls.update();
   renderer.render(scene, camera);
 }
@@ -74,4 +202,5 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+fetchSatelliteData()
 animate();
