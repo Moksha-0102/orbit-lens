@@ -29,7 +29,7 @@ container.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
-controls.minDistance = 1.5;
+controls.minDistance = 0.002; 
 controls.maxDistance = 10;
 
 const textureLoader = new THREE.TextureLoader();
@@ -220,7 +220,6 @@ function animate() {
     
     if (livePos && issMesh) {
       issGroup.position.copy(livePos);
-      
       const futureTime = new Date(now.getTime() + 1000);
       const forwardPos = getSatellitePosition(activeSatrec, futureTime);
       
@@ -228,6 +227,8 @@ function animate() {
         issGroup.up.copy(livePos).normalize();
         issGroup.lookAt(forwardPos);
       }
+
+      controls.target.copy(issGroup.position);
     }
     
     if (now.getTime() - lastOrbitUpdate > 10000) {
