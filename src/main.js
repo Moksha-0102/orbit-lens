@@ -1,6 +1,14 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as satellite from 'satellite.js';
+
+
+const latElement = document.getElementById('lat-val');
+const lonElement = document.getElementById('lon-val');
+const altElement = document.getElementById('alt-val');
+const velElement = document.getElementById('vel-val');
 
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
@@ -41,6 +49,8 @@ scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
 sunLight.position.set(5, 3, 5);
 scene.add(sunLight);
+const earthShine = new THREE.HemisphereLight(0xaaaaaa, 0x444455, 1.5);
+scene.add(earthShine);
 
 function createStars() {
   const starGeometry = new THREE.BufferGeometry();
@@ -66,14 +76,33 @@ createStars();
 /* Satellite Data fetching */
 
 const ISS_TLE_URL = 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle';
-const satGeometry = new THREE.SphereGeometry(0.02, 16, 16);
-const satMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
-const issMesh = new THREE.Mesh(satGeometry, satMaterial);
-scene.add(issMesh);
+const issGroup = new THREE.Group();
+scene.add(issGroup);
+let issMesh = null;
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+const gltfLoader = new GLTFLoader();
+gltfLoader.setDRACOLoader(dracoLoader);
+
+gltfLoader.load(
+  '/models/iss.glb',
+  (gltf) => {
+    issMesh = gltf.scene;
+    issMesh.scale.set(0.001, 0.001, 0.001); 
+    issMesh.rotation.y = Math.PI / 2; 
+    issGroup.add(issMesh); 
+    console.log("ISS model loaded successfully.");
+  },
+  undefined,
+  (error) => {
+    console.error("Fatal error loading the .glb file:", error);
+  }
+);
 
 let activeSatrec = null;
 let orbitLine = null;
 let futureOrbitLine = null;
+let lastOrbitUpdate = 0;
 
 function getSatellitePosition(satrec, date){
   const positionAndVelocity = satellite.propagate(satrec, date);
@@ -184,14 +213,52 @@ async function fetchSatelliteData() {
 
 function animate() {
   requestAnimationFrame(animate);
-
-  if (activeSatrec){
-    const livePos = getSatellitePosition(activeSatrec, new Date());
-    if (livePos) {
-      issMesh.position.copy(livePos);
+  
+  if (activeSatrec) {
+    const now = new Date();
+    const livePos = getSatellitePosition(activeSatrec, now);
+    
+    if (livePos && issMesh) {
+      issGroup.position.copy(livePos);
+      
+      const futureTime = new Date(now.getTime() + 1000);
+      const forwardPos = getSatellitePosition(activeSatrec, futureTime);
+      
+      if (forwardPos) {
+        issGroup.up.copy(livePos).normalize();
+        issGroup.lookAt(forwardPos);
+      }
+    }
+    
+    if (now.getTime() - lastOrbitUpdate > 10000) {
+      drawTrajectory(activeSatrec);
+      lastOrbitUpdate = now.getTime();
+    }
+    
+    const positionAndVelocity = satellite.propagate(activeSatrec, now);
+    const positionEci = positionAndVelocity.position;
+    const velocityEci = positionAndVelocity.velocity;
+    
+    if (positionEci && velocityEci) {
+      const gmst = satellite.gstime(now);
+      const positionGd = satellite.eciToGeodetic(positionEci, gmst);
+      
+      const latitude = positionGd.latitude * (180 / Math.PI);
+      const longitude = positionGd.longitude * (180 / Math.PI);
+      const altitude = positionGd.height;
+      const velocity = Math.sqrt(
+        Math.pow(velocityEci.x, 2) + 
+        Math.pow(velocityEci.y, 2) + 
+        Math.pow(velocityEci.z, 2)
+      );
+      
+      latElement.innerText = latitude.toFixed(4) + '°';
+      lonElement.innerText = longitude.toFixed(4) + '°';
+      altElement.innerText = altitude.toFixed(2) + ' km';
+      velElement.innerText = velocity.toFixed(2) + ' km/s';
     }
   }
-
+  
   controls.update();
   renderer.render(scene, camera);
 }

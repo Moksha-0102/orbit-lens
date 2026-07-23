@@ -7,6 +7,32 @@
     <link rel="stylesheet" href="./src/style.css">
   </head>
   <body>
+    <div id="ui-container">
+      <h1 class="title">Orbit Lens Dashboard</h1>
+      <div class="telemetry-panel">
+        <div class="data-row">
+          <span class="label">SATELLITE:</span>
+          <span class="value">ISS (ZARYA)</span>
+        </div>
+        <div class="data-row">
+          <span class="label">LATITUDE:</span>
+          <span class="value" id="lat-val">0.0000°</span>
+        </div>
+        <div class="data-row">
+          <span class="label">LONGITUDE:</span>
+          <span class="value" id="lon-val">0.0000°</span>
+        </div>
+        <div class="data-row">
+          <span class="label">ALTITUDE:</span>
+          <span class="value" id="alt-val">0.00 km</span>
+        </div>
+        <div class="data-row">
+          <span class="label">VELOCITY:</span>
+          <span class="value" id="vel-val">0.00 km/s</span>
+        </div>
+      </div>
+    </div>
+
     <div id="canvas-container"></div>
     <script type="module" src="./src/main.js"></script>
   </body>

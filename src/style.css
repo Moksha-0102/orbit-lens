@@ -14,3 +14,43 @@ body {
   height: 100vh;
   display: block;
 } 
+
+#ui-container {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  font-family: monospace;
+  color: #00ffff;
+  pointer-events: none;
+}
+
+.title {
+  font-size: 24px;
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px #00ffff;
+}
+
+.telemetry-panel {
+  background: rgba(0, 20, 30, 0.7);
+  border: 1px solid #00ffff;
+  padding: 15px;
+  border-radius: 5px;
+  backdrop-filter: blur(5px);
+  width: 300px;
+}
+
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.label {
+  color: #888;
+}
+
+.value {
+  font-weight: bold;
+}
