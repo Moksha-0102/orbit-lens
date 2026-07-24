@@ -7,12 +7,22 @@
     <link rel="stylesheet" href="./src/style.css">
   </head>
   <body>
+    <div id="loading-screen">
+      <div class="loader-text">INITIALIZING ORBIT LENS... <span id="progress-text">0%</span></div>
+      <div class="progress-bar-container">
+        <div id="progress-bar"></div>
+      </div>
+    </div>
     <div id="ui-container">
       <h1 class="title">Orbit Lens Dashboard</h1>
+      <div class="data-row">
+          <span>TARGET:</span>
+          <select id="sat-selector" class="ui-select"></select>
+      </div>
       <div class="telemetry-panel">
         <div class="data-row">
-          <span class="label">SATELLITE:</span>
-          <span class="value">ISS (ZARYA)</span>
+          <span>SATELLITE:</span>
+          <span id="sat-name" class="data-value">ISS (ZARYA)</span>
         </div>
         <div class="data-row">
           <span class="label">LATITUDE:</span>
@@ -30,6 +40,7 @@
           <span class="label">VELOCITY:</span>
           <span class="value" id="vel-val">0.00 km/s</span>
         </div>
+        <button id="cam-toggle" class="ui-button unlocked">CAMERA LOCK: EARTH</button>
       </div>
     </div>
 

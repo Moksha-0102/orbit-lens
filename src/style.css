@@ -54,3 +54,105 @@ body {
 .value {
   font-weight: bold;
 }
+
+.ui-button {
+  margin-top: 15px;
+  width: 100%;
+  padding: 10px;
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid #00ffff;
+  color: #00ffff;
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  pointer-events: auto; 
+}
+
+.ui-button:hover {
+  background: rgba(0, 255, 255, 0.3);
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+}
+
+.ui-button.unlocked {
+  background: rgba(255, 100, 100, 0.1);
+  border-color: #ff6666;
+  color: #ff6666;
+}
+.ui-button.unlocked:hover {
+  background: rgba(255, 100, 100, 0.3);
+  box-shadow: 0 0 10px rgba(255, 100, 100, 0.5);
+}
+
+.ui-select {
+  background: rgba(0, 0, 0, 0.8);
+  color: #00ffff;
+  border: 1px solid #00ffff;
+  font-family: monospace;
+  font-size: 14px;
+  padding: 4px;
+  width: 65%; 
+  margin-left: 10px;
+  pointer-events: auto;
+  outline: none;
+  cursor: pointer;
+}
+
+.ui-select option {
+  background: #111;
+  color: #00ffff;
+}
+
+/* Loading Screen */
+#loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: #00ffff;
+  font-family: monospace;
+  opacity: 1; 
+  transition: opacity 0.8s ease-in-out;
+}
+
+.loader-text {
+  font-size: 16px;
+  margin-bottom: 20px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px #00ffff;
+}
+
+#progress-text {
+  font-weight: bold;
+  color: #fff;
+}
+
+.progress-bar-container {
+  width: 350px;
+  height: 8px;
+  background: rgba(0, 255, 255, 0.05);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  padding: 2px;
+  position: relative;
+}
+
+#progress-bar {
+  width: 0%;
+  height: 100%;
+  background: #00ffff;
+  box-shadow: 0 0 15px #00ffff, inset 0 0 5px #ffffff;
+  transition: width 0.1s linear;
+}
+
+#loading-screen.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
