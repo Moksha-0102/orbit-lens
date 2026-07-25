@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js'; 
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as satellite from 'satellite.js';
@@ -33,11 +34,21 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 container.appendChild(renderer.domElement);
 
-const controls = new TrackballControls(camera, renderer.domElement);
-controls.rotateSpeed = 4.0;
-controls.dynamicDampingFactor = 0.1;
-controls.minDistance = 0.002; 
-controls.maxDistance = 10;
+const trackballControls = new TrackballControls(camera, renderer.domElement);
+trackballControls.rotateSpeed = 4.0;
+trackballControls.dynamicDampingFactor = 0.1;
+trackballControls.minDistance = 0.002; 
+trackballControls.maxDistance = 10;
+
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.05;
+orbitControls.enablePan = false;
+orbitControls.minDistance = 1.2; 
+orbitControls.maxDistance = 10;
+
+trackballControls.enabled = false;
+orbitControls.enabled = true;
 
 /*Loading Screen*/
 const loadingScreen = document.getElementById('loading-screen');
@@ -79,6 +90,8 @@ manager.onLoad = function () {
 
 const textureLoader = new THREE.TextureLoader(manager);
 const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+const nightTexture = textureLoader.load('/textures/8k_earth_nightmap.jpg'); 
+
 const earthMaterial = new THREE.MeshPhongMaterial({
   map: textureLoader.load('/textures/8k_earth_daymap.jpg'),
   normalMap: textureLoader.load('/textures/8k_earth_normal_map.jpg'),
@@ -87,15 +100,74 @@ const earthMaterial = new THREE.MeshPhongMaterial({
   specular: new THREE.Color('grey')
 });
 
+earthMaterial.userData.sunDir = { value: new THREE.Vector3() };
+earthMaterial.onBeforeCompile = function (shader) {
+  shader.uniforms.tNight = { value: nightTexture };
+  shader.uniforms.sunDir = earthMaterial.userData.sunDir;
+
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <map_pars_fragment>',
+    `
+    #include <map_pars_fragment>
+    uniform sampler2D tNight;
+    uniform vec3 sunDir;
+    `
+  );
+
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <emissivemap_fragment>',
+    `
+    #include <emissivemap_fragment>
+    
+    float intensity = dot(vNormal, sunDir);
+    float nightMix = 1.0 - smoothstep(-0.2, 0.2, intensity);
+    vec4 nightColor = texture2D(tNight, vMapUv);
+    
+    float luminance = dot(nightColor.rgb, vec3(0.299, 0.587, 0.114));
+    
+    luminance = smoothstep(0.1, 0.5, luminance);
+    
+    vec3 realisticLights = vec3(1.0, 0.75, 0.3) * luminance;
+    
+    totalEmissiveRadiance += realisticLights * nightMix * 2.0; 
+    `
+  );
+};
+
 const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 scene.add(earth);
-const ambientLight = new THREE.AmbientLight(0x333333);
+const ambientLight = new THREE.AmbientLight(0x222222); 
 scene.add(ambientLight);
-const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
-sunLight.position.set(5, 3, 5);
-scene.add(sunLight);
-const earthShine = new THREE.HemisphereLight(0xaaaaaa, 0x444455, 1.5);
+const earthShine = new THREE.HemisphereLight(0x000000, 0x002244, 1.5); 
 scene.add(earthShine);
+const sunLight = new THREE.DirectionalLight(0xffffff, 3.0);
+scene.add(sunLight);
+
+function createSunTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext('2d');
+  const gradient = context.createRadialGradient(256, 256, 0, 256, 256, 256);
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(0.1, 'rgba(255, 250, 200, 1)');
+  gradient.addColorStop(0.3, 'rgba(255, 180, 50, 0.8)');
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 512, 512);
+  return new THREE.CanvasTexture(canvas);
+}
+
+const sunMaterial = new THREE.SpriteMaterial({
+  map: createSunTexture(),
+  blending: THREE.AdditiveBlending,
+  transparent: true,
+  depthWrite: false
+});
+
+const sunSprite = new THREE.Sprite(sunMaterial);
+sunSprite.scale.set(15, 15, 1);
+scene.add(sunSprite)
 
 function createStars() {
   const starGeometry = new THREE.BufferGeometry();
@@ -353,18 +425,24 @@ camToggleBtn.addEventListener('click', () => {
   if (isCameraLocked) {
     camToggleBtn.innerText = 'CAMERA LOCK: SATELLITE'; 
     camToggleBtn.classList.remove('unlocked');
-    controls.minDistance = 0.002;
+    orbitControls.enabled = false;
+    trackballControls.enabled = true;
   } else {
     camToggleBtn.innerText = 'CAMERA LOCK: EARTH';
     camToggleBtn.classList.add('unlocked');
-    controls.minDistance = 1.2; 
+    trackballControls.enabled = false;
+    orbitControls.enabled = true;
+    camera.up.set(0, 1, 0); 
   }
 });
 
 function changeActiveTarget(newSatObject) {
   if (!newSatObject) {
     activeTarget = null;
-    isTransitioning = false;
+    
+    isTransitioning = true;
+    transitionProgress = 0.0;
+    
     document.getElementById('sat-name').innerText = 'NONE'; 
     latElement.innerText = '0.0000°';
     lonElement.innerText = '0.0000°';
@@ -375,6 +453,7 @@ function changeActiveTarget(newSatObject) {
     if (futureOrbitLine) scene.remove(futureOrbitLine);
     
     Object.values(loadedModels).forEach(model => model.visible = false);
+    
     return;
   }
 
@@ -382,19 +461,16 @@ function changeActiveTarget(newSatObject) {
   document.getElementById('sat-name').innerText = newSatObject.name; 
   drawTrajectory(activeTarget.satrec);
   
-  Object.values(loadedModels).forEach(model => {
-    model.visible = false;
-  });
-  
+  Object.values(loadedModels).forEach(model => model.visible = false);
   const targetModel = loadedModels[newSatObject.noradId];
-  if (targetModel) {
-    targetModel.visible = true;
-  }
+  if (targetModel) targetModel.visible = true;
 
   isCameraLocked = true;
   camToggleBtn.innerText = 'CAMERA LOCK: SATELLITE'; 
   camToggleBtn.classList.remove('unlocked');
-  controls.minDistance = 0.002;
+  
+  orbitControls.enabled = false;
+  trackballControls.enabled = true;
 
   isTransitioning = true;
   transitionProgress = 0.0;
@@ -435,10 +511,48 @@ container.addEventListener('pointerdown', (event) => {
   }
 });
 
+
+/* Sun */
+
+function getSunPosition(date) {
+  const time = date.getTime();
+  const jd = (time / 86400000.0) + 2440587.5;
+  const n = jd - 2451545.0;
+  const L = (280.460 + 0.9856474 * n) % 360;
+  const g = (357.528 + 0.9856003 * n) % 360;
+  const L_rad = L * (Math.PI / 180);
+  const g_rad = g * (Math.PI / 180);
+  const lambda_rad = L_rad + (1.915 * Math.sin(g_rad) + 0.020 * Math.sin(2 * g_rad)) * (Math.PI / 180);
+  const epsilon_rad = (23.439 - 0.0000004 * n) * (Math.PI / 180);
+  const alpha = Math.atan2(Math.cos(epsilon_rad) * Math.sin(lambda_rad), Math.cos(lambda_rad));
+  const delta = Math.asin(Math.sin(epsilon_rad) * Math.sin(lambda_rad));
+  const gmst = satellite.gstime(date);
+  const latitude = delta;
+  let longitude = alpha - gmst;
+  
+  if (longitude > Math.PI) longitude -= 2 * Math.PI;
+  if (longitude < -Math.PI) longitude += 2 * Math.PI;
+
+  const distance = 100; 
+  const x = distance * Math.cos(latitude) * Math.cos(longitude);
+  const y = distance * Math.sin(latitude);
+  const z = -distance * Math.cos(latitude) * Math.sin(longitude);
+
+  return new THREE.Vector3(x, y, z);
+}
+
+
+
 function animate() {
   requestAnimationFrame(animate);
   
   const now = new Date();
+  const sunPos = getSunPosition(now);
+  sunLight.position.copy(sunPos);
+  sunSprite.position.copy(sunPos);
+  const sunDir = sunPos.clone().normalize();
+  sunDir.transformDirection(camera.matrixWorldInverse);
+  earth.material.userData.sunDir.value.copy(sunDir);
   
   constellation.forEach(sat => {
     const pos = getSatellitePosition(sat.satrec, now);
@@ -492,65 +606,93 @@ function animate() {
       velElement.innerText = velocity.toFixed(2) + ' km/s';
     }
   }
-  
-let desiredTarget = new THREE.Vector3(0, 0, 0);
+
+  let desiredTarget = new THREE.Vector3(0, 0, 0);
   let idealCameraPos = new THREE.Vector3(0, 0, 5); 
 
-  if (isCameraLocked && activeTarget) {
+  if (activeTarget) {
     desiredTarget.copy(targetGroup.position);
-    
     const earthToSat = desiredTarget.clone().normalize();
     idealCameraPos = desiredTarget.clone().add(earthToSat.multiplyScalar(0.3));
+  } else {
+    idealCameraPos = camera.position.clone().normalize().multiplyScalar(5);
   }
 
-  if (isTransitioning && activeTarget) {
-    controls.enabled = false; 
+  if (isTransitioning) {
+    trackballControls.enabled = false; 
+    orbitControls.enabled = false; 
 
-    transitionProgress += 0.02;
+    transitionProgress += 0.01;
+    
     if (transitionProgress >= 1.0) {
       transitionProgress = 1.0;
       isTransitioning = false;
+      
       currentCameraTarget.copy(desiredTarget);
+      camera.position.copy(idealCameraPos);
+      
+      if (!activeTarget) {
+        camera.up.set(0, 1, 0); 
+      }
+      
+      camera.lookAt(currentCameraTarget);
+      
+      trackballControls.target.copy(currentCameraTarget);
+      orbitControls.target.copy(currentCameraTarget);
+      
+    } else {
+      const dynamicLerp = 0.04 + (transitionProgress * 0.11);
+      
+      currentCameraTarget.lerp(desiredTarget, dynamicLerp);
+
+      const currentDir = camera.position.clone().normalize();
+      const targetDir = idealCameraPos.clone().normalize();
+
+      if (currentDir.dot(targetDir) < -0.99) {
+        currentDir.add(new THREE.Vector3(0, 0.1, 0)).normalize();
+      }
+      
+      const angleDiff = currentDir.angleTo(targetDir);
+      currentDir.lerp(targetDir, dynamicLerp).normalize();
+
+      const baseAlt = idealCameraPos.length();
+      const zoomBoost = angleDiff * 1.5; 
+      const targetAlt = baseAlt + zoomBoost; 
+      const currentAlt = camera.position.length();
+      const newAlt = THREE.MathUtils.lerp(currentAlt, targetAlt, dynamicLerp);
+
+      camera.position.copy(currentDir.multiplyScalar(newAlt));
+      
+      if (!activeTarget) {
+        const targetUp = new THREE.Vector3(0, 1, 0);
+        camera.up.lerp(targetUp, dynamicLerp);
+      }
+      
+      camera.lookAt(currentCameraTarget);
     }
-
-    currentCameraTarget.lerp(desiredTarget, 0.1);
-
-    const currentDir = camera.position.clone().normalize();
-    const targetDir = idealCameraPos.clone().normalize();
-
-    if (currentDir.dot(targetDir) < -0.99) {
-      currentDir.add(new THREE.Vector3(0, 0.1, 0)).normalize();
-    }
-    
-    const angleDiff = currentDir.angleTo(targetDir);
-    currentDir.lerp(targetDir, 0.1).normalize();
-
-    const baseAlt = idealCameraPos.length();
-    const zoomBoost = angleDiff * 1.5; 
-    const targetAlt = baseAlt + zoomBoost; 
-    
-    const currentAlt = camera.position.length();
-    const newAlt = THREE.MathUtils.lerp(currentAlt, targetAlt, 0.1);
-
-    camera.position.copy(currentDir.multiplyScalar(newAlt));
-    camera.up.set(0, 1, 0);
-    camera.lookAt(currentCameraTarget);
 
   } else {
-    controls.enabled = true; 
-
     if (activeTarget && isCameraLocked) {
+      trackballControls.enabled = true; 
+      orbitControls.enabled = false;
+
       const previousTarget = currentCameraTarget.clone();
       currentCameraTarget.copy(desiredTarget); 
 
       const delta = new THREE.Vector3().subVectors(currentCameraTarget, previousTarget);
       camera.position.add(delta);
-    } else {
-      currentCameraTarget.lerp(new THREE.Vector3(0, 0, 0), 0.05);
-    }
 
-    controls.target.copy(currentCameraTarget);
-    controls.update(); 
+      trackballControls.target.copy(currentCameraTarget);
+      trackballControls.update(); 
+      
+    } else {
+      trackballControls.enabled = false;
+      orbitControls.enabled = true;
+      
+      currentCameraTarget.lerp(new THREE.Vector3(0, 0, 0), 0.05);
+      orbitControls.target.copy(currentCameraTarget);
+      orbitControls.update(); 
+    }
   }
   
   renderer.render(scene, camera);
