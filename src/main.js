@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js'; 
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as satellite from 'satellite.js';
@@ -17,6 +17,8 @@ const currentCameraTarget = new THREE.Vector3(0, 0, 0);
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 raycaster.params.Points.threshold = 0.1;
+let isTransitioning = false;
+let transitionProgress = 1.0;
 
 const camera = new THREE.PerspectiveCamera(
   45, 
@@ -31,9 +33,9 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 container.appendChild(renderer.domElement);
 
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
+const controls = new TrackballControls(camera, renderer.domElement);
+controls.rotateSpeed = 4.0;
+controls.dynamicDampingFactor = 0.1;
 controls.minDistance = 0.002; 
 controls.maxDistance = 10;
 
@@ -57,6 +59,12 @@ manager.onProgress = function (url, itemsLoaded, itemsTotal) {
 
 manager.onLoad = function () {
   console.log('All 3D assets loaded.');
+  
+  if (activeTarget) {
+    changeActiveTarget(activeTarget);
+  }
+  renderer.compile(scene, camera);
+
   setTimeout(() => {
     loadingScreen.classList.add('fade-out');
     
@@ -66,6 +74,7 @@ manager.onLoad = function () {
     
   }, 500); 
 };
+
 /*End loading screen*/
 
 const textureLoader = new THREE.TextureLoader(manager);
@@ -116,11 +125,11 @@ const targetGroup = new THREE.Group();
 scene.add(targetGroup);
 
 const modelRegistry = {
-  '25544': { path: '/models/iss.glb', scale: 0.001 },
-  '20580': { path: '/models/hubble.glb', scale: 0.0001 },
-  '48274': { path: null, scale: 1 },
-  '27424': { path: '/models/aqua.glb', scale: 0.01 },
-  '25994': { path: null, scale: 1 }
+  '25544': { path: '/models/iss.glb', scale: 0.001, rotation: [0, Math.PI / 2, 0] },
+  '20580': { path: '/models/hubble.glb', scale: 0.0001, rotation: [-Math.PI / 2, 0, 0] }, 
+  '48274': { path: null, scale: 1, rotation: [0, 0, 0] },
+  '27424': { path: '/models/aqua.glb', scale: 0.004, rotation: [Math.PI, 0, 0] }, 
+  '25994': { path: null, scale: 1, rotation: [0, 0, 0] }
 };
 
 const loadedModels = {};
@@ -150,7 +159,8 @@ Object.keys(modelRegistry).forEach(noradId => {
     (gltf) => {
       const mesh = gltf.scene;
       mesh.scale.set(config.scale, config.scale, config.scale); 
-      mesh.rotation.y = Math.PI / 2; 
+      mesh.rotation.set(config.rotation[0], config.rotation[1], config.rotation[2]); 
+      
       mesh.visible = false; 
       targetGroup.add(mesh); 
       loadedModels[noradId] = mesh;
@@ -242,15 +252,65 @@ const FALLBACK_TLE = `ISS (ZARYA)
 1 25544U 98067A   24135.52083333  .00016717  00000-0  30188-3 0  9997
 2 25544  51.6416 284.6300 0005703 124.7170 327.0002 15.49525530417711`;
 
+function parseTLEData(textData) {
+  const lines = textData.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  
+  satSelector.innerHTML = '<option value="-1">SELECT TARGET...</option>';
+
+  for (let i = 0; i < lines.length - 2; i += 3) {
+    const name = lines[i];
+    const tleLine1 = lines[i + 1];
+    const tleLine2 = lines[i + 2];
+    
+    if (tleLine1.charAt(0) !== '1' || tleLine2.charAt(0) !== '2') continue; 
+    
+    const noradId = tleLine1.substring(2, 7).trim();
+    const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
+    const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
+    scene.add(dotMesh);
+    
+    const satObject = { name, noradId, satrec, dotMesh }; 
+    constellation.push(satObject);
+    
+    const option = document.createElement('option');
+    option.value = constellation.length - 1; 
+    option.innerText = name;
+    satSelector.appendChild(option);
+  }
+  
+  if (constellation.length > 0) {
+    console.log(`Successfully loaded ${constellation.length} satellites.`);
+    changeActiveTarget(null);
+  } else {
+    throw new Error("Parsed 0 satellites.");
+  }
+}
+
 async function fetchSatelliteData() {
+  const CACHE_KEY = 'orbitlens_tle_cache';
+  const CACHE_TIME_KEY = 'orbitlens_tle_timestamp';
+  const CACHE_DURATION = 6 * 60 * 60 * 1000;
+
+  const cachedData = localStorage.getItem(CACHE_KEY);
+  const cachedTime = localStorage.getItem(CACHE_TIME_KEY);
+
+  if (cachedData && cachedTime && (Date.now() - parseInt(cachedTime)) < CACHE_DURATION) {
+    console.log("Loading TLE data from local cache...");
+    try {
+      parseTLEData(cachedData);
+      return;
+    } catch (e) {
+      console.warn("Cache corrupted. Fetching fresh data...");
+    }
+  }
+
   try {
+    console.log("Fetching fresh TLE data from API...");
     const noradIds = ['25544', '20580', '48274', '27424', '25994'];
     const fetchPromises = noradIds.map(id => 
       fetch(`https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=tle`)
         .then(response => {
-          if (!response.ok) {
-            throw new Error(`HTTP Error Status: ${response.status}`);
-          }
+          if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
           return response.text();
         })
     );
@@ -259,46 +319,21 @@ async function fetchSatelliteData() {
     const textData = results.join('\n');
 
     if (textData.includes('<!DOCTYPE html>') || textData.includes('Error') || textData.includes('No GP data')) {
-      throw new Error("API Rate Limit hit. Forcing offline fallback mode."); 
+      throw new Error("API Rate Limit hit."); 
     }
 
-    const lines = textData.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-    
-    for (let i = 0; i < lines.length - 2; i += 3) {
-      const name = lines[i];
-      const tleLine1 = lines[i + 1];
-      const tleLine2 = lines[i + 2];
-      
-      if (tleLine1.charAt(0) !== '1' || tleLine2.charAt(0) !== '2') continue; 
-      
-      const noradId = tleLine1.substring(2, 7).trim();
-      const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
-      const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
-      scene.add(dotMesh);
-      
-      // Save the ID so we can use it to swap models later
-      const satObject = { name, noradId, satrec, dotMesh }; 
-      constellation.push(satObject);
-      
-      const option = document.createElement('option');
-      option.value = constellation.length - 1; 
-      option.innerText = name;
-      satSelector.appendChild(option);
-    }
-    
-    if (constellation.length === 0) {
-      throw new Error("Parsed 0 satellites. Data was corrupted or empty.");
-    }
-    
-    console.log(`Successfully loaded ${constellation.length} satellites.`);
-    changeActiveTarget(constellation[0]);
+    localStorage.setItem(CACHE_KEY, textData);
+    localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+
+    parseTLEData(textData);
     
   } catch (error) {
     console.warn("Network/API failed. Loading offline fallback mode.", error);
+    satSelector.innerHTML = '<option value="-1">SELECT TARGET...</option>';
     
     const lines = FALLBACK_TLE.split('\n');
     const name = lines[0];
-    const noradId = lines[1].substring(2, 7).trim(); // Extract ID
+    const noradId = lines[1].substring(2, 7).trim(); 
     const satrec = satellite.twoline2satrec(lines[1], lines[2]);
     const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
     scene.add(dotMesh);
@@ -309,8 +344,7 @@ async function fetchSatelliteData() {
     option.value = 0;
     option.innerText = name + " (OFFLINE)";
     satSelector.appendChild(option);
-    
-    changeActiveTarget(constellation[0]);
+    changeActiveTarget(null);
   }
 }
 
@@ -328,6 +362,22 @@ camToggleBtn.addEventListener('click', () => {
 });
 
 function changeActiveTarget(newSatObject) {
+  if (!newSatObject) {
+    activeTarget = null;
+    isTransitioning = false;
+    document.getElementById('sat-name').innerText = 'NONE'; 
+    latElement.innerText = '0.0000°';
+    lonElement.innerText = '0.0000°';
+    altElement.innerText = '0.00 km';
+    velElement.innerText = '0.00 km/s';
+    
+    if (orbitLine) scene.remove(orbitLine);
+    if (futureOrbitLine) scene.remove(futureOrbitLine);
+    
+    Object.values(loadedModels).forEach(model => model.visible = false);
+    return;
+  }
+
   activeTarget = newSatObject;
   document.getElementById('sat-name').innerText = newSatObject.name; 
   drawTrajectory(activeTarget.satrec);
@@ -335,17 +385,33 @@ function changeActiveTarget(newSatObject) {
   Object.values(loadedModels).forEach(model => {
     model.visible = false;
   });
-  const targetModel = loadedModels[newSatObject.noradId];
   
+  const targetModel = loadedModels[newSatObject.noradId];
   if (targetModel) {
     targetModel.visible = true;
   }
+
+  isCameraLocked = true;
+  camToggleBtn.innerText = 'CAMERA LOCK: SATELLITE'; 
+  camToggleBtn.classList.remove('unlocked');
+  controls.minDistance = 0.002;
+
+  isTransitioning = true;
+  transitionProgress = 0.0;
 }
 
 satSelector.addEventListener('change', (event) => {
-  const selectedIndex = event.target.value;
-  const newTarget = constellation[selectedIndex];
-  changeActiveTarget(newTarget);
+  const selectedIndex = parseInt(event.target.value);
+  if (selectedIndex === -1) {
+    changeActiveTarget(null);
+    isCameraLocked = false;
+    camToggleBtn.innerText = 'CAMERA LOCK: EARTH';
+    camToggleBtn.classList.add('unlocked');
+    controls.minDistance = 1.2; 
+  } else {
+    const newTarget = constellation[selectedIndex];
+    changeActiveTarget(newTarget);
+  }
 });
 
 
@@ -427,14 +493,66 @@ function animate() {
     }
   }
   
+let desiredTarget = new THREE.Vector3(0, 0, 0);
+  let idealCameraPos = new THREE.Vector3(0, 0, 5); 
+
   if (isCameraLocked && activeTarget) {
-    currentCameraTarget.lerp(targetGroup.position, 0.05);
+    desiredTarget.copy(targetGroup.position);
+    
+    const earthToSat = desiredTarget.clone().normalize();
+    idealCameraPos = desiredTarget.clone().add(earthToSat.multiplyScalar(0.3));
+  }
+
+  if (isTransitioning && activeTarget) {
+    controls.enabled = false; 
+
+    transitionProgress += 0.02;
+    if (transitionProgress >= 1.0) {
+      transitionProgress = 1.0;
+      isTransitioning = false;
+      currentCameraTarget.copy(desiredTarget);
+    }
+
+    currentCameraTarget.lerp(desiredTarget, 0.1);
+
+    const currentDir = camera.position.clone().normalize();
+    const targetDir = idealCameraPos.clone().normalize();
+
+    if (currentDir.dot(targetDir) < -0.99) {
+      currentDir.add(new THREE.Vector3(0, 0.1, 0)).normalize();
+    }
+    
+    const angleDiff = currentDir.angleTo(targetDir);
+    currentDir.lerp(targetDir, 0.1).normalize();
+
+    const baseAlt = idealCameraPos.length();
+    const zoomBoost = angleDiff * 1.5; 
+    const targetAlt = baseAlt + zoomBoost; 
+    
+    const currentAlt = camera.position.length();
+    const newAlt = THREE.MathUtils.lerp(currentAlt, targetAlt, 0.1);
+
+    camera.position.copy(currentDir.multiplyScalar(newAlt));
+    camera.up.set(0, 1, 0);
+    camera.lookAt(currentCameraTarget);
+
   } else {
-    currentCameraTarget.lerp(new THREE.Vector3(0, 0, 0), 0.05);
+    controls.enabled = true; 
+
+    if (activeTarget && isCameraLocked) {
+      const previousTarget = currentCameraTarget.clone();
+      currentCameraTarget.copy(desiredTarget); 
+
+      const delta = new THREE.Vector3().subVectors(currentCameraTarget, previousTarget);
+      camera.position.add(delta);
+    } else {
+      currentCameraTarget.lerp(new THREE.Vector3(0, 0, 0), 0.05);
+    }
+
+    controls.target.copy(currentCameraTarget);
+    controls.update(); 
   }
   
-  controls.target.copy(currentCameraTarget);
-  controls.update();
   renderer.render(scene, camera);
 }
 
