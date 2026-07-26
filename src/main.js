@@ -437,6 +437,8 @@ camToggleBtn.addEventListener('click', () => {
 });
 
 function changeActiveTarget(newSatObject) {
+  const minimapContainer = document.getElementById('minimap-container'); 
+
   if (!newSatObject) {
     activeTarget = null;
     
@@ -454,12 +456,19 @@ function changeActiveTarget(newSatObject) {
     
     Object.values(loadedModels).forEach(model => model.visible = false);
     
+    if (minimapContainer) minimapContainer.style.display = 'none';
+    
     return;
   }
 
   activeTarget = newSatObject;
   document.getElementById('sat-name').innerText = newSatObject.name; 
   drawTrajectory(activeTarget.satrec);
+  
+  if (minimapContainer) {
+    minimapContainer.style.display = 'block';
+    drawGroundTrack(activeTarget.satrec); 
+  }
   
   Object.values(loadedModels).forEach(model => model.visible = false);
   const targetModel = loadedModels[newSatObject.noradId];
@@ -542,6 +551,91 @@ function getSunPosition(date) {
 }
 
 
+/* 2d map*/
+
+function getLatLon(satrec, date) {
+  const posAndVel = satellite.propagate(satrec, date);
+  const gmst = satellite.gstime(date);
+  
+  if (!posAndVel.position || isNaN(posAndVel.position.x)) return null;
+  
+  const positionGd = satellite.eciToGeodetic(posAndVel.position, gmst);
+  return {
+    lat: positionGd.latitude * (180 / Math.PI),
+    lon: positionGd.longitude * (180 / Math.PI)
+  };
+}
+
+const mapCanvas = document.getElementById('minimap');
+const mapCtx = mapCanvas.getContext('2d');
+const mapImg = new Image();
+mapImg.src = '/textures/8k_earth_daymap.jpg';
+
+function drawGroundTrack(satrec) {
+  if (!mapCanvas || !activeTarget) return;
+
+  mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+  if (mapImg.complete) {
+    mapCtx.drawImage(mapImg, 0, 0, mapCanvas.width, mapCanvas.height);
+  }
+
+  const now = Date.now();
+  const periodMinutes = Math.ceil((2 * Math.PI) / satrec.no);
+  const halfPeriod = Math.floor(periodMinutes / 2);
+
+  function drawSegment(startI, endI, isDotted, color) {
+    mapCtx.beginPath();
+    mapCtx.lineWidth = 4;
+    mapCtx.strokeStyle = color;
+    
+    if (isDotted) {
+      mapCtx.setLineDash([8, 8]);
+    } else {
+      mapCtx.setLineDash([]); 
+    }
+
+    let lastX = -1;
+    for (let i = startI; i <= endI; i++) {
+      const d = new Date(now + i * 60000);
+      const coords = getLatLon(satrec, d);
+      if (!coords) continue;
+
+      const x = (coords.lon + 180) * (mapCanvas.width / 360);
+      const y = (90 - coords.lat) * (mapCanvas.height / 180);
+
+      if (lastX !== -1 && Math.abs(x - lastX) > mapCanvas.width / 2) {
+        mapCtx.stroke(); 
+        mapCtx.beginPath(); 
+      }
+
+      if (i === startI || (lastX !== -1 && Math.abs(x - lastX) > mapCanvas.width / 2)) {
+        mapCtx.moveTo(x, y);
+      } else {
+        mapCtx.lineTo(x, y);
+      }
+      lastX = x;
+    }
+    mapCtx.stroke();
+  }
+
+  drawSegment(-halfPeriod, 0, false, '#ffff00');
+  drawSegment(0, halfPeriod, true, '#00ffff');
+  mapCtx.setLineDash([]);
+
+  const currentCoords = getLatLon(satrec, new Date(now));
+  if (currentCoords) {
+    const cx = (currentCoords.lon + 180) * (mapCanvas.width / 360);
+    const cy = (90 - currentCoords.lat) * (mapCanvas.height / 180);
+    
+    mapCtx.beginPath();
+    mapCtx.arc(cx, cy, 8, 0, 2 * Math.PI);
+    mapCtx.fillStyle = '#ff0055'; 
+    mapCtx.fill();
+    mapCtx.lineWidth = 2;
+    mapCtx.strokeStyle = 'white';
+    mapCtx.stroke();
+  }
+}
 
 function animate() {
   requestAnimationFrame(animate);
@@ -579,6 +673,7 @@ function animate() {
 
     if (now.getTime() - lastOrbitUpdate > 10000) {
       drawTrajectory(activeTarget.satrec);
+      drawGroundTrack(activeTarget.satrec);
       lastOrbitUpdate = now.getTime();
     }
     
@@ -706,3 +801,40 @@ window.addEventListener('resize', () => {
 
 fetchSatelliteData()
 animate();
+
+
+window.toggleMap = function() {
+  const btn = document.getElementById('expand-map-btn');
+  const container = document.getElementById('minimap-container');
+  
+  if (!container || !btn) return;
+  
+  if (btn.innerText === 'EXPAND') {
+    btn.innerText = 'COLLAPSE';
+    
+    container.style.position = 'fixed';
+    container.style.top = '50%';
+    container.style.left = '50%';
+    container.style.transform = 'translate(-50%, -50%)';
+    container.style.width = '85vw';
+    container.style.maxWidth = '1200px';
+    container.style.zIndex = '999999'; 
+    container.style.background = 'rgba(0, 5, 10, 0.95)';
+    container.style.padding = '15px';
+    container.style.boxShadow = '0 0 50px rgba(0, 255, 255, 0.4)';
+    
+  } else {
+    btn.innerText = 'EXPAND';
+    
+    container.style.position = 'relative';
+    container.style.top = 'auto';
+    container.style.left = 'auto';
+    container.style.transform = 'none';
+    container.style.width = '100%';
+    container.style.maxWidth = '360px';
+    container.style.zIndex = 'auto';
+    container.style.background = 'transparent';
+    container.style.padding = '0';
+    container.style.boxShadow = 'none';
+  }
+};
