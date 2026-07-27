@@ -18,7 +18,8 @@
       <h1 class="title">Orbit Lens Dashboard</h1>
       <div class="data-row">
           <span>TARGET:</span>
-          <select id="sat-selector" class="ui-select"></select>
+          <input type="text" id="sat-search" class="ui-select" placeholder="SEARCH (e.g. STARLINK)" list="sat-list" style="width: 100%; box-sizing: border-box; background: transparent; color: cyan; border: 1px solid cyan; padding: 5px; font-family: monospace;">
+          <datalist id="sat-list"></datalist>
       </div>
       <div class="telemetry-panel">
         <div class="data-row">

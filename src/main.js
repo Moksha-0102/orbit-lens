@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as satellite from 'satellite.js';
+import { mx_gradient_float_1 } from 'three/src/nodes/materialx/lib/mx_noise.js';
 
 
 const latElement = document.getElementById('lat-val');
@@ -75,14 +76,13 @@ manager.onLoad = function () {
     changeActiveTarget(activeTarget);
   }
   renderer.compile(scene, camera);
+  loadingScreen.style.pointerEvents = 'none';
 
   setTimeout(() => {
     loadingScreen.classList.add('fade-out');
-    
     setTimeout(() => {
       loadingScreen.style.display = 'none';
     }, 800);
-    
   }, 500); 
 };
 
@@ -244,9 +244,11 @@ Object.keys(modelRegistry).forEach(noradId => {
 
 let constellation = [];
 let activeTarget = null;
+let instancedMesh;
 
-const satSelector = document.getElementById('sat-selector');
-const dotGeometry = new THREE.SphereGeometry(0.008, 8, 8); 
+const dummy = new THREE.Object3D(); 
+const satSearch = document.getElementById('sat-search');
+const dotGeometry = new THREE.SphereGeometry(0.003, 8, 8); 
 const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 
 let orbitLine = null;
@@ -326,11 +328,20 @@ const FALLBACK_TLE = `ISS (ZARYA)
 
 function parseTLEData(textData) {
   const lines = textData.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  
-  satSelector.innerHTML = '<option value="-1">SELECT TARGET...</option>';
+  const dataList = document.getElementById('sat-list');
+  dataList.innerHTML = '';
+  constellation = [];
+
+  const friendlyNames = {
+    '25544': 'ISS (ZARYA) - INTERNATIONAL SPACE STATION',
+    '20580': 'HST - HUBBLE SPACE TELESCOPE',
+    '48274': 'CSS (TIANHE) - TIANGONG SPACE STATION',
+    '27424': 'AQUA',
+    '25994': 'TERRA'
+  };
 
   for (let i = 0; i < lines.length - 2; i += 3) {
-    const name = lines[i];
+    const rawName = lines[i];
     const tleLine1 = lines[i + 1];
     const tleLine2 = lines[i + 2];
     
@@ -338,20 +349,21 @@ function parseTLEData(textData) {
     
     const noradId = tleLine1.substring(2, 7).trim();
     const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
-    const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
-    scene.add(dotMesh);
-    
-    const satObject = { name, noradId, satrec, dotMesh }; 
+    const displayName = friendlyNames[noradId] ? friendlyNames[noradId] : rawName;
+    const satObject = { name: displayName, noradId, satrec }; 
     constellation.push(satObject);
-    
     const option = document.createElement('option');
-    option.value = constellation.length - 1; 
-    option.innerText = name;
-    satSelector.appendChild(option);
+    option.value = displayName;
+    dataList.appendChild(option);
   }
   
   if (constellation.length > 0) {
     console.log(`Successfully loaded ${constellation.length} satellites.`);
+    
+    if (instancedMesh) scene.remove(instancedMesh);
+    instancedMesh = new THREE.InstancedMesh(dotGeometry, dotMaterial, constellation.length);
+    scene.add(instancedMesh);
+    
     changeActiveTarget(null);
   } else {
     throw new Error("Parsed 0 satellites.");
@@ -377,45 +389,39 @@ async function fetchSatelliteData() {
   }
 
   try {
-    console.log("Fetching fresh TLE data from API...");
-    const noradIds = ['25544', '20580', '48274', '27424', '25994'];
-    const fetchPromises = noradIds.map(id => 
-      fetch(`https://celestrak.org/NORAD/elements/gp.php?CATNR=${id}&FORMAT=tle`)
-        .then(response => {
-          if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
-          return response.text();
-        })
-    );
-
-    const results = await Promise.all(fetchPromises);
-    const textData = results.join('\n');
+    console.log("Fetching master active satellite list from API...");
+    const response = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
+    
+    if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
+    const textData = await response.text();
 
     if (textData.includes('<!DOCTYPE html>') || textData.includes('Error') || textData.includes('No GP data')) {
-      throw new Error("API Rate Limit hit."); 
+      throw new Error("API Rate Limit hit or invalid data returned."); 
     }
 
     localStorage.setItem(CACHE_KEY, textData);
     localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
-
     parseTLEData(textData);
     
   } catch (error) {
     console.warn("Network/API failed. Loading offline fallback mode.", error);
-    satSelector.innerHTML = '<option value="-1">SELECT TARGET...</option>';
-    
+    const dataList = document.getElementById('sat-list');
+    dataList.innerHTML = '';
+    constellation = [];
     const lines = FALLBACK_TLE.split('\n');
     const name = lines[0];
     const noradId = lines[1].substring(2, 7).trim(); 
     const satrec = satellite.twoline2satrec(lines[1], lines[2]);
-    const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
-    scene.add(dotMesh);
-    const satObject = { name, noradId, satrec, dotMesh };
+    const satObject = { name, noradId, satrec };
     constellation.push(satObject);
-    
     const option = document.createElement('option');
-    option.value = 0;
-    option.innerText = name + " (OFFLINE)";
-    satSelector.appendChild(option);
+    option.value = name + " (OFFLINE)";
+    dataList.appendChild(option);
+    
+    if (instancedMesh) scene.remove(instancedMesh);
+    instancedMesh = new THREE.InstancedMesh(dotGeometry, dotMaterial, constellation.length);
+    scene.add(instancedMesh);
+
     changeActiveTarget(null);
   }
 }
@@ -485,37 +491,36 @@ function changeActiveTarget(newSatObject) {
   transitionProgress = 0.0;
 }
 
-satSelector.addEventListener('change', (event) => {
-  const selectedIndex = parseInt(event.target.value);
-  if (selectedIndex === -1) {
+satSearch.addEventListener('change', (event) => {
+  const searchTerm = event.target.value.trim().toUpperCase();
+  
+  if (searchTerm === '') {
     changeActiveTarget(null);
     isCameraLocked = false;
     camToggleBtn.innerText = 'CAMERA LOCK: EARTH';
     camToggleBtn.classList.add('unlocked');
-    controls.minDistance = 1.2; 
+    orbitControls.minDistance = 1.2; 
   } else {
-    const newTarget = constellation[selectedIndex];
-    changeActiveTarget(newTarget);
+    const foundSat = constellation.find(sat => sat.name.toUpperCase().includes(searchTerm));
+    if (foundSat) {
+      changeActiveTarget(foundSat);
+      satSearch.value = foundSat.name;
+    }
   }
 });
 
-
-container.addEventListener('pointerdown', (event) => {
+container.addEventListener('click', (event) => {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(mouse, camera);
   
-  const targetMeshes = constellation.map(sat => sat.dotMesh);
-  const intersects = raycaster.intersectObjects(targetMeshes);
-
-  if (intersects.length > 0) {
-    const clickedMesh = intersects[0].object;
-    const clickedSatIndex = constellation.findIndex(sat => sat.dotMesh === clickedMesh);
-    
-    if (clickedSatIndex !== -1) {
-      const clickedSat = constellation[clickedSatIndex];
+  if (instancedMesh) {
+    const intersects = raycaster.intersectObject(instancedMesh);
+    if (intersects.length > 0) {
+      const instanceId = intersects[0].instanceId;
+      const clickedSat = constellation[instanceId];
       changeActiveTarget(clickedSat);
-      satSelector.value = clickedSatIndex;
+      satSearch.value = clickedSat.name; 
     }
   }
 });
@@ -648,13 +653,24 @@ function animate() {
   sunDir.transformDirection(camera.matrixWorldInverse);
   earth.material.userData.sunDir.value.copy(sunDir);
   
-  constellation.forEach(sat => {
-    const pos = getSatellitePosition(sat.satrec, now);
-    if (pos) {
-      sat.dotMesh.position.copy(pos);
-      sat.dotMesh.visible = (sat !== activeTarget);
-    }
-  });
+  if (instancedMesh && constellation.length > 0) {
+    constellation.forEach((sat, i) => {
+      const pos = getSatellitePosition(sat.satrec, now);
+      if (pos) {
+        dummy.position.copy(pos);
+        
+        if (sat === activeTarget && loadedModels[sat.noradId]) {
+           dummy.scale.set(0, 0, 0);
+        } else {
+           dummy.scale.set(1, 1, 1);
+        }
+        
+        dummy.updateMatrix();
+        instancedMesh.setMatrixAt(i, dummy.matrix);
+      }
+    });
+    instancedMesh.instanceMatrix.needsUpdate = true;
+  }
   
   if (activeTarget) {
     const livePos = getSatellitePosition(activeTarget.satrec, now);
@@ -717,7 +733,7 @@ function animate() {
     trackballControls.enabled = false; 
     orbitControls.enabled = false; 
 
-    transitionProgress += 0.01;
+    transitionProgress += 0.025;
     
     if (transitionProgress >= 1.0) {
       transitionProgress = 1.0;
@@ -736,7 +752,7 @@ function animate() {
       orbitControls.target.copy(currentCameraTarget);
       
     } else {
-      const dynamicLerp = 0.04 + (transitionProgress * 0.11);
+      const dynamicLerp = 0.05 + (Math.pow(transitionProgress, 3) * 0.95);
       
       currentCameraTarget.lerp(desiredTarget, dynamicLerp);
 
