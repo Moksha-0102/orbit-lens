@@ -4,7 +4,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as satellite from 'satellite.js';
-import { mx_gradient_float_1 } from 'three/src/nodes/materialx/lib/mx_noise.js';
 
 
 const latElement = document.getElementById('lat-val');
@@ -71,11 +70,14 @@ manager.onProgress = function (url, itemsLoaded, itemsTotal) {
 
 manager.onLoad = function () {
   console.log('All 3D assets loaded.');
+  Object.values(loadedModels).forEach(model => model.visible = true);
+  renderer.render(scene, camera);
+  Object.values(loadedModels).forEach(model => model.visible = false);
   
   if (activeTarget) {
     changeActiveTarget(activeTarget);
   }
-  renderer.compile(scene, camera);
+  
   loadingScreen.style.pointerEvents = 'none';
 
   setTimeout(() => {
@@ -251,6 +253,9 @@ const satSearch = document.getElementById('sat-search');
 const dotGeometry = new THREE.SphereGeometry(0.003, 8, 8); 
 const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 
+let currentSatUpdateIndex = 0;
+const SATS_PER_FRAME = 4000;
+
 let orbitLine = null;
 let futureOrbitLine = null;
 let lastOrbitUpdate = 0;
@@ -262,19 +267,18 @@ function getSatellitePosition(satrec, date, fixedGmst = null){
   if (!positionEci || isNaN(positionEci.x)) return null;
 
   const gmst = fixedGmst !== null ? fixedGmst : satellite.gstime(date);
-  
-  const positionGd = satellite.eciToGeodetic(positionEci, gmst);
-  const longitude = positionGd.longitude;
-  const latitude = positionGd.latitude;
-  const altitude = positionGd.height;
-  
-  const EARTH_RADIUS = 6371;
-  const r = 1 + (altitude / EARTH_RADIUS); 
-  const x = r * Math.cos(latitude) * Math.cos(longitude);
-  const y = r * Math.sin(latitude);
-  const z = -r * Math.cos(latitude) * Math.sin(longitude);
+  const cosGmst = Math.cos(gmst);
+  const sinGmst = Math.sin(gmst);
+  const xEcef = positionEci.x * cosGmst + positionEci.y * sinGmst;
+  const yEcef = -positionEci.x * sinGmst + positionEci.y * cosGmst;
+  const zEcef = positionEci.z;
 
-  return new THREE.Vector3(x, y, z);
+  const EARTH_RADIUS = 6371;
+  return new THREE.Vector3(
+    xEcef / EARTH_RADIUS,
+    zEcef / EARTH_RADIUS,
+    -yEcef / EARTH_RADIUS
+  );
 }
 
 function drawTrajectory(satrec) {
@@ -409,13 +413,13 @@ async function fetchSatelliteData() {
     dataList.innerHTML = '';
     constellation = [];
     const lines = FALLBACK_TLE.split('\n');
-    const name = lines[0];
+    const name = lines[0] + " (OFFLINE)";
     const noradId = lines[1].substring(2, 7).trim(); 
     const satrec = satellite.twoline2satrec(lines[1], lines[2]);
     const satObject = { name, noradId, satrec };
     constellation.push(satObject);
     const option = document.createElement('option');
-    option.value = name + " (OFFLINE)";
+    option.value = name;
     dataList.appendChild(option);
     
     if (instancedMesh) scene.remove(instancedMesh);
@@ -654,12 +658,21 @@ function animate() {
   earth.material.userData.sunDir.value.copy(sunDir);
   
   if (instancedMesh && constellation.length > 0) {
-    constellation.forEach((sat, i) => {
+    
+    const has3DModel = activeTarget && 
+                       loadedModels[activeTarget.noradId] && 
+                       modelRegistry[activeTarget.noradId]?.path !== null;
+
+    const limit = Math.min(currentSatUpdateIndex + SATS_PER_FRAME, constellation.length);
+    
+    for (let i = currentSatUpdateIndex; i < limit; i++) {
+      const sat = constellation[i];
       const pos = getSatellitePosition(sat.satrec, now);
+      
       if (pos) {
         dummy.position.copy(pos);
         
-        if (sat === activeTarget && loadedModels[sat.noradId]) {
+        if (sat === activeTarget && has3DModel) {
            dummy.scale.set(0, 0, 0);
         } else {
            dummy.scale.set(1, 1, 1);
@@ -668,8 +681,32 @@ function animate() {
         dummy.updateMatrix();
         instancedMesh.setMatrixAt(i, dummy.matrix);
       }
-    });
+    }
+    
+    if (activeTarget) {
+      const activeIndex = constellation.indexOf(activeTarget);
+      if (activeIndex !== -1) {
+        const pos = getSatellitePosition(activeTarget.satrec, now);
+        if (pos) {
+           dummy.position.copy(pos);
+           if (has3DModel) {
+             dummy.scale.set(0, 0, 0);
+           } else {
+             dummy.scale.set(1, 1, 1);
+           }
+           
+           dummy.updateMatrix();
+           instancedMesh.setMatrixAt(activeIndex, dummy.matrix);
+        }
+      }
+    }
+    
     instancedMesh.instanceMatrix.needsUpdate = true;
+    
+    currentSatUpdateIndex = limit;
+    if (currentSatUpdateIndex >= constellation.length) {
+      currentSatUpdateIndex = 0; 
+    }
   }
   
   if (activeTarget) {
