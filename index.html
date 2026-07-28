@@ -11,10 +11,19 @@
   </head>
   <body>
     <div id="loading-screen">
-      <div class="loader-text">INITIALIZING ORBIT LENS... <span id="progress-text">0%</span></div>
-      <div class="progress-bar-container">
-        <div id="progress-bar"></div>
-      </div>
+        <div class="loader-content">
+            <div class="brand">
+                <div class="loader-dot"></div>
+                <h1>ORBIT LENS</h1>
+            </div>
+            <div class="loader-status">
+                <span id="loading-message">INITIALIZING...</span>
+                <span id="progress-text">0%</span>
+            </div>
+            <div class="progress-container">
+                <div id="progress-bar"></div>
+            </div>
+        </div>
     </div>
     <div id="ui-panel" class="command-panel">
         <div class="panel-header">
@@ -27,6 +36,10 @@
             <label for="sat-search">TARGET LOCK</label>
             <input list="sat-list" id="sat-search" autocomplete="off" placeholder="SEARCH SATELLITE...">
             <datalist id="sat-list"></datalist>
+        </div>
+        
+        <div id="offline-banner" style="display: none; background: rgba(220, 38, 38, 0.15); border: 1px solid #dc2626; color: #f87171; padding: 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-align: center; margin-bottom: 12px; letter-spacing: 0.5px;">
+            API CONNECTION FAILED: PLEASE TRY AGAIN LATER
         </div>
 
         <div class="input-group">

@@ -68,6 +68,30 @@ manager.onProgress = function (url, itemsLoaded, itemsTotal) {
   }
 };
 
+let assetsLoaded = false;
+let dataLoaded = false;
+
+function checkLoadStatus() {
+  const loadingMsg = document.getElementById('loading-message');
+  
+  if (assetsLoaded && !dataLoaded && loadingMsg) {
+      loadingMsg.innerText = 'FETCHING TELEMETRY DATA...';
+  }
+  
+  if (assetsLoaded && dataLoaded) {
+      const loadScreen = document.getElementById('loading-screen');
+      loadScreen.style.pointerEvents = 'none';
+      if (loadingMsg) loadingMsg.innerText = 'SYSTEM READY.';
+      
+      setTimeout(() => {
+        loadScreen.classList.add('fade-out');
+        setTimeout(() => {
+          loadScreen.style.display = 'none';
+        }, 800);
+      }, 500); 
+  }
+}
+
 manager.onLoad = function () {
   console.log('All 3D assets loaded.');
   Object.values(loadedModels).forEach(model => model.visible = true);
@@ -78,14 +102,8 @@ manager.onLoad = function () {
     changeActiveTarget(activeTarget);
   }
   
-  loadingScreen.style.pointerEvents = 'none';
-
-  setTimeout(() => {
-    loadingScreen.classList.add('fade-out');
-    setTimeout(() => {
-      loadingScreen.style.display = 'none';
-    }, 800);
-  }, 500); 
+  assetsLoaded = true;
+  checkLoadStatus(); 
 };
 
 /*End loading screen*/
@@ -371,25 +389,31 @@ function parseTLEData(textData) {
     
     const satObject = { name: displayName, noradId, satrec, category }; 
     constellation.push(satObject);
-    const option = document.createElement('option');
-    option.value = displayName;
-    dataList.appendChild(option);
+    
+    if (i < 1500) {
+        const option = document.createElement('option');
+        option.value = displayName;
+        dataList.appendChild(option);
+    }
   }
   
   if (constellation.length > 0) {
     console.log(`Successfully loaded ${constellation.length} satellites.`);
     
     if (insightCount) insightCount.innerText = constellation.length;
-    if (dataInsights) dataInsights.style.display = 'block';
-    if (instancedMesh) scene.remove(instancedMesh);
+    if (dataInsights) dataInsights.style.display = 'flex';
+    if (instancedMesh) {
+        scene.remove(instancedMesh);
+    }
     instancedMesh = new THREE.InstancedMesh(dotGeometry, dotMaterial, constellation.length);
+    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     scene.add(instancedMesh);
-    
-    changeActiveTarget(null);
-  } else {
-    throw new Error("Parsed 0 satellites.");
+
+    dataLoaded = true;
+    checkLoadStatus();
   }
 }
+
 
 async function fetchSatelliteData() {
   const CACHE_KEY = 'orbitlens_tle_cache';
@@ -424,8 +448,15 @@ async function fetchSatelliteData() {
     localStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
     parseTLEData(textData);
     
+    dataLoaded = true;
+    checkLoadStatus();
+    
   } catch (error) {
     console.warn("Network/API failed. Loading offline fallback mode.", error);
+    document.getElementById('offline-banner').style.display = 'block';
+    dataLoaded = true;
+    checkLoadStatus();
+    
     const dataList = document.getElementById('sat-list');
     dataList.innerHTML = '';
     constellation = [];
@@ -543,23 +574,27 @@ satSearch.addEventListener('change', (event) => {
 satFilter.addEventListener('change', (event) => {
   activeFilter = event.target.value;
   const dataList = document.getElementById('sat-list');
-  dataList.innerHTML = '';
+  dataList.innerHTML = ''; 
   let visibleCount = 0;
+  let optionsAdded = 0; 
   
   constellation.forEach(sat => {
      if (activeFilter === 'ALL' || sat.category === activeFilter) {
-         const option = document.createElement('option');
-         option.value = sat.name;
-         dataList.appendChild(option);
+         if (optionsAdded < 500) {
+             const option = document.createElement('option');
+             option.value = sat.name;
+             dataList.appendChild(option);
+             optionsAdded++;
+         }
          visibleCount++;
      }
   });
   
-  if (insightCount) insightCount.innerText = visibleCount;
+  if (insightCount) insightCount.innerText = visibleCount; 
   if (activeTarget && activeFilter !== 'ALL' && activeTarget.category !== activeFilter) {
       changeActiveTarget(null);
   }
-  satSearch.value = '';
+  satSearch.value = ''; 
 });
 
 container.addEventListener('click', (event) => {
