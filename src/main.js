@@ -255,7 +255,7 @@ const insightCount = document.getElementById('insight-count');
 const dataInsights = document.getElementById('data-insights');
 let activeFilter = 'ALL';
 const dotGeometry = new THREE.SphereGeometry(0.0045, 8, 8); 
-const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+const dotMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
 let currentSatUpdateIndex = 0;
 const SATS_PER_FRAME = 4000;
@@ -489,7 +489,7 @@ function changeActiveTarget(newSatObject) {
   }
 
   if (!dropLine) {
-    const dropMaterial = new THREE.LineBasicMaterial({ color: 0xff0055, linewidth: 2 });
+    const dropMaterial = new THREE.LineBasicMaterial({ color: 0xaaaaaa, linewidth: 2, transparent: true, opacity: 0.5 });
     const dropGeom = new THREE.BufferGeometry();
     dropGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
     dropLine = new THREE.Line(dropGeom, dropMaterial);
@@ -925,6 +925,7 @@ animate();
 window.toggleMap = function() {
   const btn = document.getElementById('expand-map-btn');
   const container = document.getElementById('minimap-container');
+  const canvas = document.getElementById('minimap');
   
   if (!container || !btn) return;
   
@@ -935,25 +936,44 @@ window.toggleMap = function() {
     container.style.top = '50%';
     container.style.left = '50%';
     container.style.transform = 'translate(-50%, -50%)';
-    container.style.width = '85vw';
+    container.style.width = '90vw';
     container.style.maxWidth = '1200px';
+    container.style.maxHeight = '85vh';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
     container.style.zIndex = '999999'; 
-    container.style.background = 'rgba(0, 5, 10, 0.95)';
-    container.style.padding = '15px';
-    container.style.boxShadow = '0 0 50px rgba(0, 255, 255, 0.4)';
+    container.style.background = '#0a0a0a';
+    container.style.border = '1px solid #333333';
+    container.style.padding = '0';
+    container.style.boxShadow = '0 10px 50px rgba(0,0,0,0.9)';
+    
+    if (canvas) {
+        canvas.style.objectFit = 'contain';
+        canvas.style.minHeight = '0';
+    }
     
   } else {
     btn.innerText = 'EXPAND';
     
-    container.style.position = 'relative';
+    container.style.position = 'fixed';
     container.style.top = 'auto';
+    container.style.bottom = '20px';
+    container.style.right = '20px';
     container.style.left = 'auto';
     container.style.transform = 'none';
-    container.style.width = '100%';
-    container.style.maxWidth = '360px';
-    container.style.zIndex = 'auto';
-    container.style.background = 'transparent';
+    container.style.width = '320px';
+    container.style.maxWidth = '320px';
+    container.style.maxHeight = 'none';
+    container.style.display = 'block';
+    container.style.zIndex = '100';
+    container.style.background = '#0a0a0a';
+    container.style.border = '1px solid #333333';
     container.style.padding = '0';
     container.style.boxShadow = 'none';
+    
+    if (canvas) {
+        canvas.style.objectFit = 'fill';
+        canvas.style.minHeight = 'auto';
+    }
   }
 };

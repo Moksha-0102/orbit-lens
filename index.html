@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Real-Time Satellite Tracker</title>
     <link rel="stylesheet" href="./src/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="loading-screen">
@@ -13,59 +16,73 @@
         <div id="progress-bar"></div>
       </div>
     </div>
-    
-    <div id="ui-container" style="position: absolute; top: 20px; left: 20px; z-index: 10;">
-      <h1 class="title">Orbit Lens Dashboard</h1>
-      <div class="data-row" style="margin-bottom: 10px;">
-          <span>FILTER:</span>
-          <select id="sat-filter" class="ui-select" style="width: 100%; box-sizing: border-box; background: transparent; color: cyan; border: 1px solid cyan; padding: 5px; font-family: monospace;">
-            <option value="ALL">ALL SATELLITES</option>
-            <option value="STARLINK">STARLINK CONSTELLATION</option>
-            <option value="ONEWEB">ONEWEB CONSTELLATION</option>
-            <option value="COMMS">COMMERCIAL COMMS (IRIDIUM/FLOCK/ETC)</option>
-            <option value="GPS">NAVIGATION (GPS/GLONASS/BEIDOU)</option>
-            <option value="WEATHER">EARTH OBS & WEATHER</option>
-            <option value="STATIONS">SPACE STATIONS</option>
-            <option value="OTHER">OTHER / MISCELLANEOUS</option>
-        </select>
-      </div>
-      <div class="data-row">
-          <span>TARGET:</span>
-          <input type="text" id="sat-search" class="ui-select" placeholder="SEARCH (e.g. STARLINK)" list="sat-list" style="width: 100%; box-sizing: border-box; background: transparent; color: cyan; border: 1px solid cyan; padding: 5px; font-family: monospace;">
-          <datalist id="sat-list"></datalist>
-      </div>
-      <div id="data-insights" style="margin-top: 15px; border-top: 1px solid rgba(0, 255, 255, 0.3); padding-top: 10px; font-size: 12px; display: none;">
-          <span style="color: #aaa;">INSIGHTS:</span><br>
-          <span style="color: cyan;">VISIBLE SATS: </span><span id="insight-count">0</span>
-      </div>
-      <div class="telemetry-panel">
-        <div class="data-row">
-          <span class="label">SATELLITE:</span>
-          <span class="value" id="sat-name">NONE</span>
+    <div id="ui-panel" class="command-panel">
+        <div class="panel-header">
+            <div class="header-title">
+                <h2>ORBIT LENS</h2>
+            </div>
         </div>
-        <div class="data-row">
-          <span class="label">LATITUDE:</span>
-          <span class="value" id="lat-val">0.0000°</span>
+
+        <div class="input-group">
+            <label for="sat-search">TARGET LOCK</label>
+            <input list="sat-list" id="sat-search" autocomplete="off" placeholder="SEARCH SATELLITE...">
+            <datalist id="sat-list"></datalist>
         </div>
-        <div class="data-row">
-          <span class="label">LONGITUDE:</span>
-          <span class="value" id="lon-val">0.0000°</span>
+
+        <div class="input-group">
+            <label for="sat-filter">FILTER</label>
+            <select id="sat-filter">
+                <option value="ALL">ALL SATELLITES</option>
+                <option value="STARLINK">STARLINK CONSTELLATION</option>
+                <option value="ONEWEB">ONEWEB CONSTELLATION</option>
+                <option value="COMMS">COMMERCIAL COMMS</option>
+                <option value="GPS">NAVIGATION (GPS/GLONASS)</option>
+                <option value="WEATHER">EARTH OBS & WEATHER</option>
+                <option value="STATIONS">SPACE STATIONS</option>
+                <option value="OTHER">OTHER / MISCELLANEOUS</option>
+            </select>
         </div>
-        <div class="data-row">
-          <span class="label">ALTITUDE:</span>
-          <span class="value" id="alt-val">0.00 km</span>
+
+        <div id="data-insights" class="insights-bar" style="display: none;">
+            <span class="label">ACTIVE TRACKS</span>
+            <span id="insight-count" class="val">0</span>
         </div>
-        <div class="data-row">
-          <span class="label">VELOCITY:</span>
-          <span class="value" id="vel-val">0.00 km/s</span>
+
+        <div class="divider"></div>
+
+        <div class="telemetry-section">
+            <div class="telemetry-title">TARGET: <span id="sat-name" class="active-name">NONE</span></div>
+            <div class="telemetry-grid">
+                <div class="stat-card">
+                    <span class="label">LATITUDE</span>
+                    <span id="lat-val" class="val">0.0000°</span>
+                </div>
+                <div class="stat-card">
+                    <span class="label">LONGITUDE</span>
+                    <span id="lon-val" class="val">0.0000°</span>
+                </div>
+                <div class="stat-card">
+                    <span class="label">ALTITUDE</span>
+                    <span id="alt-val" class="val">0.00 km</span>
+                </div>
+                <div class="stat-card">
+                    <span class="label">VELOCITY</span>
+                    <span id="vel-val" class="val">0.00 km/s</span>
+                </div>
+            </div>
         </div>
-        <button id="cam-toggle" class="ui-button unlocked">CAMERA LOCK: EARTH</button>
-      </div>
-      
-      <div id="minimap-container" style="display: none; margin-top: 15px; border: 1px solid #00ffff; width: 100%; max-width: 360px; position: relative;">
-        <button id="expand-map-btn" onclick="window.toggleMap()" style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.8); border: 1px solid cyan; color: cyan; cursor: pointer; font-size: 10px; font-weight: bold; z-index: 99999; padding: 4px 8px; pointer-events: auto;">EXPAND</button>
-        <canvas id="minimap" width="1024" height="512" style="display: block; width: 100%;"></canvas>
-      </div>
+
+        <div class="control-group">
+            <button id="cam-toggle" class="cmd-btn">CAMERA LOCK: EARTH</button>
+        </div>
+    </div>
+
+    <div id="minimap-container" style="display: none;">
+        <div class="minimap-header">
+            <span>GROUND TRACK 2D</span>
+            <button id="expand-map-btn" class="mini-btn" onclick="toggleMap()">EXPAND</button>
+        </div>
+        <canvas id="minimap" width="1024" height="512"></canvas>
     </div>
 
     <div id="canvas-container" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1; overflow: hidden;"></div>
