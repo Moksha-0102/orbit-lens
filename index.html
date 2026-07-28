@@ -16,10 +16,27 @@
     
     <div id="ui-container" style="position: absolute; top: 20px; left: 20px; z-index: 10;">
       <h1 class="title">Orbit Lens Dashboard</h1>
+      <div class="data-row" style="margin-bottom: 10px;">
+          <span>FILTER:</span>
+          <select id="sat-filter" class="ui-select" style="width: 100%; box-sizing: border-box; background: transparent; color: cyan; border: 1px solid cyan; padding: 5px; font-family: monospace;">
+            <option value="ALL">ALL SATELLITES</option>
+            <option value="STARLINK">STARLINK CONSTELLATION</option>
+            <option value="ONEWEB">ONEWEB CONSTELLATION</option>
+            <option value="COMMS">COMMERCIAL COMMS (IRIDIUM/FLOCK/ETC)</option>
+            <option value="GPS">NAVIGATION (GPS/GLONASS/BEIDOU)</option>
+            <option value="WEATHER">EARTH OBS & WEATHER</option>
+            <option value="STATIONS">SPACE STATIONS</option>
+            <option value="OTHER">OTHER / MISCELLANEOUS</option>
+        </select>
+      </div>
       <div class="data-row">
           <span>TARGET:</span>
           <input type="text" id="sat-search" class="ui-select" placeholder="SEARCH (e.g. STARLINK)" list="sat-list" style="width: 100%; box-sizing: border-box; background: transparent; color: cyan; border: 1px solid cyan; padding: 5px; font-family: monospace;">
           <datalist id="sat-list"></datalist>
+      </div>
+      <div id="data-insights" style="margin-top: 15px; border-top: 1px solid rgba(0, 255, 255, 0.3); padding-top: 10px; font-size: 12px; display: none;">
+          <span style="color: #aaa;">INSIGHTS:</span><br>
+          <span style="color: cyan;">VISIBLE SATS: </span><span id="insight-count">0</span>
       </div>
       <div class="telemetry-panel">
         <div class="data-row">

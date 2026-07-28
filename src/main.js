@@ -250,7 +250,11 @@ let instancedMesh;
 
 const dummy = new THREE.Object3D(); 
 const satSearch = document.getElementById('sat-search');
-const dotGeometry = new THREE.SphereGeometry(0.003, 8, 8); 
+const satFilter = document.getElementById('sat-filter');
+const insightCount = document.getElementById('insight-count');
+const dataInsights = document.getElementById('data-insights');
+let activeFilter = 'ALL';
+const dotGeometry = new THREE.SphereGeometry(0.0045, 8, 8); 
 const dotMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 
 let currentSatUpdateIndex = 0;
@@ -259,6 +263,7 @@ const SATS_PER_FRAME = 4000;
 let orbitLine = null;
 let futureOrbitLine = null;
 let lastOrbitUpdate = 0;
+let dropLine = null;
 
 function getSatellitePosition(satrec, date, fixedGmst = null){
   const positionAndVelocity = satellite.propagate(satrec, date);
@@ -354,7 +359,17 @@ function parseTLEData(textData) {
     const noradId = tleLine1.substring(2, 7).trim();
     const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
     const displayName = friendlyNames[noradId] ? friendlyNames[noradId] : rawName;
-    const satObject = { name: displayName, noradId, satrec }; 
+    const upperName = displayName.toUpperCase();
+    let category = 'OTHER';
+    if (upperName.includes('STARLINK')) category = 'STARLINK';
+    else if (upperName.includes('ONEWEB')) category = 'ONEWEB';
+    else if (upperName.includes('IRIDIUM') || upperName.includes('O3B') || upperName.includes('GLOBALSTAR') || upperName.includes('FLOCK') || upperName.includes('LEMUR') || upperName.includes('ORBCOMM')) category = 'COMMS';
+    else if (upperName.includes('NAVSTAR') || upperName.includes('GLONASS') || upperName.includes('BEIDOU') || upperName.includes('GALILEO') || upperName.includes('GPS')) category = 'GPS';
+    else if (upperName.includes('NOAA') || upperName.includes('GOES') || upperName.includes('AQUA') || upperName.includes('TERRA') || upperName.includes('METEOR') || upperName.includes('SENTINEL') || upperName.includes('LANDSAT')) category = 'WEATHER';
+    else if (upperName.includes('ISS') || upperName.includes('CSS') || upperName.includes('TIANGONG')) category = 'STATIONS';
+    else category = 'OTHER';
+    
+    const satObject = { name: displayName, noradId, satrec, category }; 
     constellation.push(satObject);
     const option = document.createElement('option');
     option.value = displayName;
@@ -364,6 +379,8 @@ function parseTLEData(textData) {
   if (constellation.length > 0) {
     console.log(`Successfully loaded ${constellation.length} satellites.`);
     
+    if (insightCount) insightCount.innerText = constellation.length;
+    if (dataInsights) dataInsights.style.display = 'block';
     if (instancedMesh) scene.remove(instancedMesh);
     instancedMesh = new THREE.InstancedMesh(dotGeometry, dotMaterial, constellation.length);
     scene.add(instancedMesh);
@@ -451,7 +468,6 @@ function changeActiveTarget(newSatObject) {
 
   if (!newSatObject) {
     activeTarget = null;
-    
     isTransitioning = true;
     transitionProgress = 0.0;
     
@@ -464,12 +480,23 @@ function changeActiveTarget(newSatObject) {
     if (orbitLine) scene.remove(orbitLine);
     if (futureOrbitLine) scene.remove(futureOrbitLine);
     
-    Object.values(loadedModels).forEach(model => model.visible = false);
+    if (dropLine) dropLine.visible = false; 
     
+    Object.values(loadedModels).forEach(model => model.visible = false);
     if (minimapContainer) minimapContainer.style.display = 'none';
     
     return;
   }
+
+  if (!dropLine) {
+    const dropMaterial = new THREE.LineBasicMaterial({ color: 0xff0055, linewidth: 2 });
+    const dropGeom = new THREE.BufferGeometry();
+    dropGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    dropLine = new THREE.Line(dropGeom, dropMaterial);
+    dropLine.frustumCulled = false; 
+    scene.add(dropLine);
+  }
+  dropLine.visible = true;
 
   activeTarget = newSatObject;
   document.getElementById('sat-name').innerText = newSatObject.name; 
@@ -513,6 +540,28 @@ satSearch.addEventListener('change', (event) => {
   }
 });
 
+satFilter.addEventListener('change', (event) => {
+  activeFilter = event.target.value;
+  const dataList = document.getElementById('sat-list');
+  dataList.innerHTML = '';
+  let visibleCount = 0;
+  
+  constellation.forEach(sat => {
+     if (activeFilter === 'ALL' || sat.category === activeFilter) {
+         const option = document.createElement('option');
+         option.value = sat.name;
+         dataList.appendChild(option);
+         visibleCount++;
+     }
+  });
+  
+  if (insightCount) insightCount.innerText = visibleCount;
+  if (activeTarget && activeFilter !== 'ALL' && activeTarget.category !== activeFilter) {
+      changeActiveTarget(null);
+  }
+  satSearch.value = '';
+});
+
 container.addEventListener('click', (event) => {
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -523,8 +572,10 @@ container.addEventListener('click', (event) => {
     if (intersects.length > 0) {
       const instanceId = intersects[0].instanceId;
       const clickedSat = constellation[instanceId];
-      changeActiveTarget(clickedSat);
-      satSearch.value = clickedSat.name; 
+      if (activeFilter === 'ALL' || clickedSat.category === activeFilter) {
+        changeActiveTarget(clickedSat);
+        satSearch.value = clickedSat.name; 
+      }
     }
   }
 });
@@ -671,8 +722,9 @@ function animate() {
       
       if (pos) {
         dummy.position.copy(pos);
+        const isHiddenByFilter = activeFilter !== 'ALL' && sat.category !== activeFilter;
         
-        if (sat === activeTarget && has3DModel) {
+        if ((sat === activeTarget && has3DModel) || isHiddenByFilter) {
            dummy.scale.set(0, 0, 0);
         } else {
            dummy.scale.set(1, 1, 1);
@@ -714,6 +766,20 @@ function animate() {
     
     if (livePos) { 
       targetGroup.position.copy(livePos);
+      
+      if (dropLine && dropLine.visible) {
+        const groundPos = livePos.clone().normalize(); 
+        const positions = dropLine.geometry.attributes.position.array;
+        
+        positions[0] = groundPos.x;
+        positions[1] = groundPos.y;
+        positions[2] = groundPos.z;
+        positions[3] = livePos.x;
+        positions[4] = livePos.y;
+        positions[5] = livePos.z;
+        
+        dropLine.geometry.attributes.position.needsUpdate = true;
+      }
       
       const futureTime = new Date(now.getTime() + 1000);
       const forwardPos = getSatellitePosition(activeTarget.satrec, futureTime);
