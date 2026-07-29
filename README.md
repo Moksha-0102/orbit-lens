@@ -2,7 +2,7 @@
 
 Orbit Lens is a real-time 3D satellite tracking website built using vanilla JavaScript and Three.js. It tracks over 16,000 live space objects around earth using real-time data from CelesTrak.
 
-## Features
+## Overview of Features
 
 * **Smooth Performance:** This website uses `THREE.InstancedMesh` to render 16,000+ objects smoothly without crashing the browser.
 
@@ -18,6 +18,7 @@ Orbit Lens is a real-time 3D satellite tracking website built using vanilla Java
 
 * **Responsive UI:** A dark-themed UI that is optimized for both desktop and mobile devices.
 
+*(Note: This overview does not cover all the features. More detailed technical documentation regarding the architecture, API integrations, additional features, and more can be found in the ARCHITECTURE.md file).*
 
 ## Tech Stack
 
