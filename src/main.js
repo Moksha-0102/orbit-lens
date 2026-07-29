@@ -406,8 +406,7 @@ async function fetchSatelliteData() {
 
   try {
     console.log("Fetching master active satellite list from API...");
-    const targetUrl = encodeURIComponent('https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle');
-    const response = await fetch(`https://corsproxy.io/?url=${targetUrl}`);
+    const response = await fetch('/api/celestrak');
     
     if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
     const textData = await response.text();
