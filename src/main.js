@@ -189,27 +189,6 @@ const sunSprite = new THREE.Sprite(sunMaterial);
 sunSprite.scale.set(15, 15, 1);
 scene.add(sunSprite)
 
-function createStars() {
-  const starGeometry = new THREE.BufferGeometry();
-  const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.02 });
-  const starVertices = [];
-  
-  for(let i = 0; i < 5000; i++) {
-    const x = (Math.random() - 0.5) * 100;
-    const y = (Math.random() - 0.5) * 100;
-    const z = (Math.random() - 0.5) * 100;
-    starVertices.push(x, y, z);
-  }
-  
-  starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-  const stars = new THREE.Points(starGeometry, starMaterial);
-  scene.add(stars);
-}
-createStars();
-
-
-
-
 /* Satellite Data fetching */
 
 const ISS_TLE_URL = 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=tle';
@@ -355,8 +334,6 @@ const FALLBACK_TLE = `ISS (ZARYA)
 
 function parseTLEData(textData) {
   const lines = textData.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-  const dataList = document.getElementById('sat-list');
-  dataList.innerHTML = '';
   constellation = [];
 
   const friendlyNames = {
@@ -384,17 +361,11 @@ function parseTLEData(textData) {
     else if (upperName.includes('IRIDIUM') || upperName.includes('O3B') || upperName.includes('GLOBALSTAR') || upperName.includes('FLOCK') || upperName.includes('LEMUR') || upperName.includes('ORBCOMM')) category = 'COMMS';
     else if (upperName.includes('NAVSTAR') || upperName.includes('GLONASS') || upperName.includes('BEIDOU') || upperName.includes('GALILEO') || upperName.includes('GPS')) category = 'GPS';
     else if (upperName.includes('NOAA') || upperName.includes('GOES') || upperName.includes('AQUA') || upperName.includes('TERRA') || upperName.includes('METEOR') || upperName.includes('SENTINEL') || upperName.includes('LANDSAT')) category = 'WEATHER';
-    else if (upperName.includes('ISS') || upperName.includes('CSS') || upperName.includes('TIANGONG')) category = 'STATIONS';
+    else if (noradId === '25544' || noradId === '48274') category = 'STATIONS';
     else category = 'OTHER';
     
     const satObject = { name: displayName, noradId, satrec, category }; 
     constellation.push(satObject);
-    
-    if (i < 1500) {
-        const option = document.createElement('option');
-        option.value = displayName;
-        dataList.appendChild(option);
-    }
   }
   
   if (constellation.length > 0) {
@@ -456,9 +427,6 @@ async function fetchSatelliteData() {
     document.getElementById('offline-banner').style.display = 'block';
     dataLoaded = true;
     checkLoadStatus();
-    
-    const dataList = document.getElementById('sat-list');
-    dataList.innerHTML = '';
     constellation = [];
     const lines = FALLBACK_TLE.split('\n');
     const name = lines[0] + " (OFFLINE)";
@@ -466,10 +434,6 @@ async function fetchSatelliteData() {
     const satrec = satellite.twoline2satrec(lines[1], lines[2]);
     const satObject = { name, noradId, satrec };
     constellation.push(satObject);
-    const option = document.createElement('option');
-    option.value = name;
-    dataList.appendChild(option);
-    
     if (instancedMesh) scene.remove(instancedMesh);
     instancedMesh = new THREE.InstancedMesh(dotGeometry, dotMaterial, constellation.length);
     scene.add(instancedMesh);
@@ -545,7 +509,6 @@ function changeActiveTarget(newSatObject) {
   isCameraLocked = true;
   camToggleBtn.innerText = 'CAMERA LOCK: SATELLITE'; 
   camToggleBtn.classList.remove('unlocked');
-  
   orbitControls.enabled = false;
   trackballControls.enabled = true;
 
@@ -553,48 +516,69 @@ function changeActiveTarget(newSatObject) {
   transitionProgress = 0.0;
 }
 
-satSearch.addEventListener('change', (event) => {
-  const searchTerm = event.target.value.trim().toUpperCase();
-  
-  if (searchTerm === '') {
-    changeActiveTarget(null);
-    isCameraLocked = false;
-    camToggleBtn.innerText = 'CAMERA LOCK: EARTH';
-    camToggleBtn.classList.add('unlocked');
-    orbitControls.minDistance = 1.2; 
-  } else {
-    const foundSat = constellation.find(sat => sat.name.toUpperCase().includes(searchTerm));
-    if (foundSat) {
-      changeActiveTarget(foundSat);
-      satSearch.value = foundSat.name;
+const customDropdown = document.getElementById('custom-dropdown');
+
+function populateDropdown(searchTerm = '') {
+    customDropdown.innerHTML = '';
+    const upperTerm = searchTerm.trim().toUpperCase();
+    
+    let optionsAdded = 0;
+    for (let i = 0; i < constellation.length; i++) {
+        const sat = constellation[i];
+        
+        if ((activeFilter === 'ALL' || sat.category === activeFilter) && 
+            sat.name.toUpperCase().includes(upperTerm)) {
+            
+            const item = document.createElement('div');
+            item.className = 'dropdown-item';
+            item.innerText = sat.name;
+            
+            item.addEventListener('click', () => {
+                changeActiveTarget(sat);
+                satSearch.value = sat.name;
+                customDropdown.classList.add('hidden');
+            });
+            
+            customDropdown.appendChild(item);
+            optionsAdded++;
+        }
+        if (optionsAdded >= 200) break; 
     }
-  }
+    if (optionsAdded > 0) {
+        customDropdown.classList.remove('hidden');
+    } else {
+        customDropdown.classList.add('hidden');
+    }
+}
+
+satSearch.addEventListener('input', (event) => {
+    populateDropdown(event.target.value);
+});
+
+satSearch.addEventListener('focus', (event) => {
+    populateDropdown(event.target.value);
+});
+
+document.addEventListener('click', (event) => {
+    if (!satSearch.contains(event.target) && !customDropdown.contains(event.target)) {
+        customDropdown.classList.add('hidden');
+    }
 });
 
 satFilter.addEventListener('change', (event) => {
   activeFilter = event.target.value;
-  const dataList = document.getElementById('sat-list');
-  dataList.innerHTML = ''; 
   let visibleCount = 0;
-  let optionsAdded = 0; 
-  
   constellation.forEach(sat => {
      if (activeFilter === 'ALL' || sat.category === activeFilter) {
-         if (optionsAdded < 500) {
-             const option = document.createElement('option');
-             option.value = sat.name;
-             dataList.appendChild(option);
-             optionsAdded++;
-         }
          visibleCount++;
      }
   });
-  
   if (insightCount) insightCount.innerText = visibleCount; 
   if (activeTarget && activeFilter !== 'ALL' && activeTarget.category !== activeFilter) {
       changeActiveTarget(null);
   }
   satSearch.value = ''; 
+  customDropdown.classList.add('hidden');
 });
 
 container.addEventListener('click', (event) => {
@@ -974,13 +958,15 @@ window.toggleMap = function() {
     container.style.width = '90vw';
     container.style.maxWidth = '1200px';
     container.style.maxHeight = '85vh';
+    container.style.aspectRatio = '2 / 1'; 
+    container.style.height = 'auto';
     container.style.display = 'flex';
     container.style.flexDirection = 'column';
     container.style.zIndex = '999999'; 
-    container.style.background = '#0a0a0a';
-    container.style.border = '1px solid #333333';
+    container.style.background = '#0B0F19';
+    container.style.border = '1px solid #1E293B';
     container.style.padding = '0';
-    container.style.boxShadow = '0 10px 50px rgba(0,0,0,0.9)';
+    container.style.boxShadow = '0 12px 50px rgba(0,0,0,0.8)';
     
     if (canvas) {
         canvas.style.objectFit = 'contain';
@@ -999,12 +985,14 @@ window.toggleMap = function() {
     container.style.width = '320px';
     container.style.maxWidth = '320px';
     container.style.maxHeight = 'none';
+    container.style.aspectRatio = 'auto';
+    container.style.height = 'auto';
     container.style.display = 'block';
     container.style.zIndex = '100';
-    container.style.background = '#0a0a0a';
-    container.style.border = '1px solid #333333';
+    container.style.background = '#0B0F19';
+    container.style.border = '1px solid #1E293B';
     container.style.padding = '0';
-    container.style.boxShadow = 'none';
+    container.style.boxShadow = '0 12px 32px rgba(0, 0, 0, 0.6)';
     
     if (canvas) {
         canvas.style.objectFit = 'fill';
